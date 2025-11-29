@@ -56,7 +56,5 @@ def predict():
         "team1_last_5": t1_last5,
         "team2_last_5": t2_last5
     })
-
-
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
