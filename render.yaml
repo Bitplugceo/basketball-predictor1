@@ -1,7 +1,6 @@
 services:
   - type: web
-    name: basketball-predictor
+    name: predictor1
     env: python
-    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn main:app
+    startCommand: python app.py
