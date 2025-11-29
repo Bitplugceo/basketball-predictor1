@@ -1,72 +1,26 @@
-# app.py
-import os
-import requests
 from flask import Flask, request, jsonify
+import requests
 
 app = Flask(__name__)
 
-SPORTMONKS_KEY = os.environ.get("SPORTMONKS_KEY")
+SOFA_HEADERS = {
+    "User-Agent": "Mozilla/5.0"
+}
 
-# -------------------------
-# Fetch team ID by name
-# -------------------------
-def get_team_id(team_name):
-    try:
-        url = f"https://api.sportmonks.com/v3/basketball/teams/search/{team_name}"
-        params = {"api_token": SPORTMONKS_KEY}
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
+def get_team(form_name):
+    url = f"https://api.sofascore.com/api/v1/search?q={form_name}"
+    r = requests.get(url, headers=SOFA_HEADERS)
+    data = r.json()
+    for item in data.get("results", []):
+        if item.get("entityType") == "team":
+            return item["entity"]
+    return None
 
-        if "data" in data and len(data["data"]) > 0:
-            return data["data"][0]["id"], None
-        return None, "Team not found"
-    except Exception as e:
-        return None, str(e)
-
-
-# -------------------------
-# Fetch last 5 matches
-# -------------------------
-def get_team_last5(team_id):
-    try:
-        url = f"https://api.sportmonks.com/v3/basketball/teams/{team_id}?include=latest.events"
-        params = {"api_token": SPORTMONKS_KEY}
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-
-        results = []
-
-        if "data" in data and "latest" in data["data"]:
-            events = data["data"]["latest"]["events"]
-            for ev in events[:5]:
-                results.append(ev.get("result_info", "N/A"))
-
-        return results, None
-    except Exception as e:
-        return None, str(e)
-
-
-# -------------------------
-# Simple Prediction Logic
-# -------------------------
-def make_prediction(team1_results, team2_results):
-    t1_wins = team1_results.count("win")
-    t2_wins = team2_results.count("win")
-
-    if t1_wins > t2_wins:
-        return "Team 1 likely wins"
-    elif t2_wins > t1_wins:
-        return "Team 2 likely wins"
-    else:
-        return "Tight game — no clear favorite"
-
-
-@app.route("/")
-def home():
-    return {"status": "Basketball Predictor Running"}
-
+def get_last_5_matches(team_id):
+    url = f"https://api.sofascore.com/api/v1/team/{team_id}/events/last/0"
+    r = requests.get(url, headers=SOFA_HEADERS)
+    data = r.json().get("events", [])
+    return data[:5]
 
 @app.route("/predict", methods=["GET"])
 def predict():
@@ -74,37 +28,25 @@ def predict():
     team2 = request.args.get("team2")
 
     if not team1 or not team2:
-        return jsonify({"error": "Missing team1 or team2"}), 400
+        return jsonify({"error": "team1 and team2 are required"}), 400
 
-    # Get team IDs
-    t1_id, err = get_team_id(team1)
-    if err:
-        return jsonify({"error": f"Team1 error: {err}"}), 400
+    t1 = get_team(team1)
+    t2 = get_team(team2)
 
-    t2_id, err = get_team_id(team2)
-    if err:
-        return jsonify({"error": f"Team2 error: {err}"}), 400
+    if not t1:
+        return jsonify({"error": f"Team1 '{team1}' not found"}), 404
+    if not t2:
+        return jsonify({"error": f"Team2 '{team2}' not found"}), 404
 
-    # Get last 5 results
-    t1_last5, err = get_team_last5(t1_id)
-    if err:
-        return jsonify({"error": f"Team1 last5 error: {err}"}), 400
-
-    t2_last5, err = get_team_last5(t2_id)
-    if err:
-        return jsonify({"error": f"Team2 last5 error: {err}"}), 400
-
-    # Prediction
-    prediction = make_prediction(t1_last5, t2_last5)
+    t1_last5 = get_last_5_matches(t1["id"])
+    t2_last5 = get_last_5_matches(t2["id"])
 
     return jsonify({
-        "team1": team1,
-        "team2": team2,
+        "team1": t1,
         "team1_last5": t1_last5,
-        "team2_last5": t2_last5,
-        "prediction": prediction
+        "team2": t2,
+        "team2_last5": t2_last5
     })
 
-
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run()
